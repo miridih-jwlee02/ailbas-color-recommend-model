@@ -97,11 +97,11 @@ Train a color model on a notebook [notebooks/train_model.ipynb](full_palette_gen
 ## Citation
 
 ```bibtex
-@misc{Qiu_2023,
-  author = {Qiu Qianru, Wang Xueting, Otani Mayu},
-  title = {Multimodal Color Recommendation in Vector Graphic Documents},  
-  doi = {10.48550/ARXIV.2308.04118},  
-  url = {https://arxiv.org/abs/2308.04118},  
-  year = {2023},
+@inproceedings{qiu2023multimodal,
+  title = {Multimodal Color Recommendation in Vector Graphic Documents},
+  author = {Qiu, Qianru and Wang, Xueting and Otani, Mayu},
+  booktitle = {Proceedings of the 31st ACM International Conference on Multimedia},
+  pages = {4003--4011},
+  year = {2023}
 }
 ```
