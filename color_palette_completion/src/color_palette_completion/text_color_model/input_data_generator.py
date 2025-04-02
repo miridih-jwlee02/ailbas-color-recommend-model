@@ -1,6 +1,6 @@
 import os
 import random
-from collections import Counter
+from collections import Counter # 항목의 등장 횟수를 쉽게 셀 수 있도록 해주는 자료형
 
 import numpy as np
 import tensorflow as tf
@@ -19,7 +19,7 @@ class Tokenizer:
         self._token_pad_id = self.word2id['PAD']
         self._token_unknown_id = self.word2id['UNK']
 
-    def encode(self, text):
+    def encode(self, text): # 색상 시퀀스를 받아서 정수 ID로 바꿈
         token_ids = [self.word2id[char] for char in text]
         segment_ids = [0 for char in text]
         return token_ids, segment_ids
@@ -35,8 +35,8 @@ class Corpus:
         self.vocab2id, self.id2vocab = self.generate_vocabulary()
         self.data = []
 
-    def generate_vocabulary(self):
 
+    def generate_vocabulary(self):
         if os.path.exists(self.config['Vocabulary_File_Path']):
             with open(self.config['Vocabulary_File_Path'], 'r', encoding='utf-8') as f:
                 vocabs = eval(f.read())
@@ -55,22 +55,24 @@ class Corpus:
 
         return vocab2id, id2vocab
 
+
     def make_and_parse_passages(self):
         with open(self.config['Corpus_File_Path'], 'r', encoding='utf-8') as f:
             corpus_ = f.readlines()
         for line in corpus_:
             yield line.replace('"', '')
 
+
     def make_color_data(self):
         passages = self.make_and_parse_passages()
         for passage in passages:
-            sentences = passage.strip('\n').split(' ; ')
+            sentences = passage.strip('\n').split(' ; ') # image, svg, text 3개의 팔레트
             if len(sentences) == 1:
                 print('1 palette only')
                 continue
             one_sample = []
             for i in range(len(sentences)):
-                for color in sentences[i].split(' '):
+                for color in sentences[i].split(' '): # 각 팔레트에서 공백으로 나뉜 색상 토큰들을 순회 (예: "120_130_140")
                     if color == '':
                         one_sample.append(self.vocab2id['PAD'])
                     else:
@@ -80,13 +82,14 @@ class Corpus:
                             one_sample.append(self.vocab2id['UNK'])
                 # add PAD when color number in a palette is less then max_palette_length
                 for r in range(len(sentences[i].split(' ')), self.config['Max_Palette_Length'][i]):
-                    one_sample.append(self.vocab2id['PAD'])
-                one_sample.append(self.vocab2id['SEP'])
+                    one_sample.append(self.vocab2id['PAD']) # 팔레트의 색상이 부족하면 [PAD] 토큰 추가
+                one_sample.append(self.vocab2id['SEP']) # 팔레트 하나의 끝마다 [SEP] 토큰을 추가
 
-            if len(one_sample) < self.config['Max_Sequence_Length']:
-                one_sample += [self.vocab2id['PAD']] * (self.config['Max_Sequence_Length'] - len(one_sample))
-            self.data.append(one_sample[:self.config['Max_Sequence_Length']])
-            
+            if len(one_sample) < self.config['Max_Sequence_Length']: # 전체 시퀀스 길이가 Max에 비해 부족하면, 뒤를 PAD 토큰으로 채움
+                one_sample += [self.vocab2id['PAD']] * (self.config['Max_Sequence_Length'] - len(one_sample)) 
+            self.data.append(one_sample[:self.config['Max_Sequence_Length']]) # 반대로 너무 크면 잘라서 저장, 맞는 길이면 그대로 self.data에 저장
+
+
     def token_id_to_word_list(self, token_id_list):
         """
         transfer token_id to original word list
@@ -99,13 +102,15 @@ class Corpus:
                 word_list.append('[UNK]')
         return word_list
 
+
 class TextEmbeddings:    
     def make_and_parse_text_emb(self, file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             texts_ = f.readlines()
         for line in texts_:
             yield line
-            
+
+
     def make_text_data(self, config):
         text_contents_emb = []
         image_labels_emb = []
@@ -123,6 +128,7 @@ class TextEmbeddings:
             
         return text_contents_emb, image_labels_emb
 
+
 class DataGenerator(tf.keras.utils.Sequence):
     def __init__(self, config):
         self.config = config
@@ -134,8 +140,10 @@ class DataGenerator(tf.keras.utils.Sequence):
         self.batch_size = self.config['Batch_Size']
         self.mask_token_id = self.corpus.vocab2id['MASK']
 
+
     def __len__(self):
         return len(self.data) // self.batch_size
+
 
     def make_mask_language_model_data(self, batch_token_id):
         """
@@ -144,32 +152,32 @@ class DataGenerator(tf.keras.utils.Sequence):
         """
         batch_size = len(batch_token_id)
         # [PAD] token id = 3
-        batch_ignorePAD = (np.array(batch_token_id) != self.corpus.vocab2id['PAD']).astype(int)
+        batch_ignorePAD = (np.array(batch_token_id) != self.corpus.vocab2id['PAD']).astype(int) # [PAD], [SEP] 토큰의 위치는 마스킹을 하지 못하기 때문에 0으로 표시
         batch_ignoreSEP = (np.array(batch_token_id) != self.corpus.vocab2id['SEP']).astype(int)
-        batch_ignore = (batch_ignorePAD * batch_ignoreSEP).astype(int)
+        batch_ignore = (batch_ignorePAD * batch_ignoreSEP).astype(int) # [PAD], [SEP]이 아닌 위치만 1로 남겨서 마스킹 가능한 유효 위치만 뽑아냄
         
         batch_real_seq_lens = np.sum(batch_ignore, axis=1) # ignore [CLS]
-        batch_mask_word_num = np.ceil(batch_real_seq_lens * self.config['Mask_Rate']).astype(int)
+        batch_mask_word_num = np.ceil(batch_real_seq_lens * self.config['Mask_Rate']).astype(int) # 전체 토큰의 40% (Mask_Rate) 만큼 마스킹할 개수 계산. ceil은 소수점 올림.
         mask_position = []
         for i in range(batch_size):
             real_seq = [idx for idx, element in enumerate(batch_ignore[i]) if element > 0]
-            if len(self.config['Mask_position']) == 0:
+            if len(self.config['Mask_position']) == 0: # 동적 마스킹. 논문에서 제안한 방식과 동일함.
                 prob = random.random()
                 if prob < self.config['Mask_Token_Rate']:
                     position = np.random.choice(real_seq, size=batch_mask_word_num[i], replace=False) # set random position
                 else:
                     position = []
-            elif self.config['Mask_position'] == 'random':
+            elif self.config['Mask_position'] == 'random': # 50%의 확률없이, 지정한 위치를 모두 마스킹.
                 r_size = self.config['Mask_num'] if self.config['Mask_num'] < len(real_seq) else len(real_seq)
                 position = np.random.choice(real_seq, size=r_size, replace=False)
             else:
-                position = self.config['Mask_position'] # set fixed position
-            mask_position.append(np.sum(np.eye(self.config['Max_Sequence_Length'])[position], axis=0))
+                position = self.config['Mask_position'] # set fixed position # 고정된 위치를 마스킹하는 방식임
+            mask_position.append(np.sum(np.eye(self.config['Max_Sequence_Length'])[position], axis=0)) # eye는 단위행렬을 생성함.
 
         mask_position = np.array(mask_position)
         
         # set masked position with mask token id
-        mask_value_matrix = mask_position * self.mask_token_id
+        mask_value_matrix = mask_position * self.mask_token_id # 마스킹할 위치에만 MASK ID를 넣어주는 벡터
         inputs_mask = (mask_position == 0).astype(int)
         batch_token_id_after_mlm = (batch_token_id * inputs_mask + mask_value_matrix).astype(int)
         
@@ -179,6 +187,43 @@ class DataGenerator(tf.keras.utils.Sequence):
         
         return batch_token_id_after_mlm, mask_position, mask_classification
     
+
+
+
+    # def make_mask_language_model_data(self, batch_token_id):
+    #     batch_token_id = np.array(batch_token_id)
+    #     batch_size, seq_len = batch_token_id.shape
+
+    #     mask_token_id = self.mask_token_id
+    #     pad_id = self.corpus.vocab2id['PAD']
+    #     sep_id = self.corpus.vocab2id['SEP']
+
+    #     batch_x = batch_token_id.copy()
+    #     mlm_mask = np.zeros_like(batch_token_id)
+    #     mcc_mask = np.zeros_like(batch_token_id)
+
+    #     for i in range(batch_size):
+    #         valid_positions = [
+    #             idx for idx in range(seq_len)
+    #             if batch_token_id[i, idx] != pad_id and batch_token_id[i, idx] != sep_id
+    #         ]
+
+    #         # 40% 샘플링
+    #         num_mask_candidates = int(len(valid_positions) * 0.4)
+    #         sampled_positions = np.random.choice(valid_positions, size=num_mask_candidates, replace=False)
+
+    #         # 50%만 마스킹
+    #         num_to_mask = int(len(sampled_positions) * 0.5)
+    #         masked_positions = np.random.choice(sampled_positions, size=num_to_mask, replace=False)
+
+    #         # 마스크 적용
+    #         for pos in masked_positions:
+    #             batch_x[i, pos] = mask_token_id
+    #             mlm_mask[i, pos] = 1
+    #             mcc_mask[i, pos] = batch_token_id[i, pos]  # 정답 저장
+
+    #     return batch_x, mlm_mask, mcc_mask
+
     def make_segment_inputs(self, batch_token_id):
         segment_inputs = []
         
