@@ -144,85 +144,83 @@ class DataGenerator(tf.keras.utils.Sequence):
     def __len__(self):
         return len(self.data) // self.batch_size
 
-
-    def make_mask_language_model_data(self, batch_token_id):
-        """
-        15% mask for token ids. [MASK] id = 2。
-        batch_token_id: [batch, max_seq_len]
-        """
-        batch_size = len(batch_token_id)
-        # [PAD] token id = 3
-        batch_ignorePAD = (np.array(batch_token_id) != self.corpus.vocab2id['PAD']).astype(int) # [PAD], [SEP] 토큰의 위치는 마스킹을 하지 못하기 때문에 0으로 표시
-        batch_ignoreSEP = (np.array(batch_token_id) != self.corpus.vocab2id['SEP']).astype(int)
-        batch_ignore = (batch_ignorePAD * batch_ignoreSEP).astype(int) # [PAD], [SEP]이 아닌 위치만 1로 남겨서 마스킹 가능한 유효 위치만 뽑아냄
-        
-        batch_real_seq_lens = np.sum(batch_ignore, axis=1) # ignore [CLS]
-        batch_mask_word_num = np.ceil(batch_real_seq_lens * self.config['Mask_Rate']).astype(int) # 전체 토큰의 40% (Mask_Rate) 만큼 마스킹할 개수 계산. ceil은 소수점 올림.
-        mask_position = []
-        for i in range(batch_size):
-            real_seq = [idx for idx, element in enumerate(batch_ignore[i]) if element > 0]
-            if len(self.config['Mask_position']) == 0: # 동적 마스킹. 논문에서 제안한 방식과 동일함.
-                prob = random.random()
-                if prob < self.config['Mask_Token_Rate']:
-                    position = np.random.choice(real_seq, size=batch_mask_word_num[i], replace=False) # set random position
-                else:
-                    position = []
-            elif self.config['Mask_position'] == 'random': # 50%의 확률없이, 지정한 위치를 모두 마스킹.
-                r_size = self.config['Mask_num'] if self.config['Mask_num'] < len(real_seq) else len(real_seq)
-                position = np.random.choice(real_seq, size=r_size, replace=False)
-            else:
-                position = self.config['Mask_position'] # set fixed position # 고정된 위치를 마스킹하는 방식임
-            mask_position.append(np.sum(np.eye(self.config['Max_Sequence_Length'])[position], axis=0)) # eye는 단위행렬을 생성함.
-
-        mask_position = np.array(mask_position)
-        
-        # set masked position with mask token id
-        mask_value_matrix = mask_position * self.mask_token_id # 마스킹할 위치에만 MASK ID를 넣어주는 벡터
-        inputs_mask = (mask_position == 0).astype(int)
-        batch_token_id_after_mlm = (batch_token_id * inputs_mask + mask_value_matrix).astype(int)
-        
-        # set masked position with its original token id
-        inputs_unmask = (mask_position == 1).astype(int)
-        mask_classification = (batch_token_id * inputs_unmask).astype(int)
-        
-        return batch_token_id_after_mlm, mask_position, mask_classification
-    
-
-
-
+    # 기존방식
     # def make_mask_language_model_data(self, batch_token_id):
-    #     batch_token_id = np.array(batch_token_id)
-    #     batch_size, seq_len = batch_token_id.shape
-
-    #     mask_token_id = self.mask_token_id
-    #     pad_id = self.corpus.vocab2id['PAD']
-    #     sep_id = self.corpus.vocab2id['SEP']
-
-    #     batch_x = batch_token_id.copy()
-    #     mlm_mask = np.zeros_like(batch_token_id)
-    #     mcc_mask = np.zeros_like(batch_token_id)
-
+    #     """
+    #     15% mask for token ids. [MASK] id = 2。
+    #     batch_token_id: [batch, max_seq_len]
+    #     """
+    #     batch_size = len(batch_token_id)
+    #     # [PAD] token id = 3
+    #     batch_ignorePAD = (np.array(batch_token_id) != self.corpus.vocab2id['PAD']).astype(int) # [PAD], [SEP] 토큰의 위치는 마스킹을 하지 못하기 때문에 0으로 표시
+    #     batch_ignoreSEP = (np.array(batch_token_id) != self.corpus.vocab2id['SEP']).astype(int)
+    #     batch_ignore = (batch_ignorePAD * batch_ignoreSEP).astype(int) # [PAD], [SEP]이 아닌 위치만 1로 남겨서 마스킹 가능한 유효 위치만 뽑아냄
+        
+    #     batch_real_seq_lens = np.sum(batch_ignore, axis=1) # ignore [CLS]
+    #     batch_mask_word_num = np.ceil(batch_real_seq_lens * self.config['Mask_Rate']).astype(int) # 전체 토큰의 40% (Mask_Rate) 만큼 마스킹할 개수 계산. ceil은 소수점 올림.
+    #     mask_position = []
     #     for i in range(batch_size):
-    #         valid_positions = [
-    #             idx for idx in range(seq_len)
-    #             if batch_token_id[i, idx] != pad_id and batch_token_id[i, idx] != sep_id
-    #         ]
+    #         real_seq = [idx for idx, element in enumerate(batch_ignore[i]) if element > 0]
+    #         if len(self.config['Mask_position']) == 0: # 동적 마스킹. 논문에서 제안한 방식과 동일함.
+    #             prob = random.random()
+    #             if prob < self.config['Mask_Token_Rate']:
+    #                 position = np.random.choice(real_seq, size=batch_mask_word_num[i], replace=False) # set random position
+    #             else:
+    #                 position = []
+    #         elif self.config['Mask_position'] == 'random': # 50%의 확률없이, 지정한 위치를 모두 마스킹.
+    #             r_size = self.config['Mask_num'] if self.config['Mask_num'] < len(real_seq) else len(real_seq)
+    #             position = np.random.choice(real_seq, size=r_size, replace=False)
+    #         else:
+    #             position = self.config['Mask_position'] # set fixed position # 고정된 위치를 마스킹하는 방식임
+    #         mask_position.append(np.sum(np.eye(self.config['Max_Sequence_Length'])[position], axis=0)) # eye는 단위행렬을 생성함.
 
-    #         # 40% 샘플링
-    #         num_mask_candidates = int(len(valid_positions) * 0.4)
-    #         sampled_positions = np.random.choice(valid_positions, size=num_mask_candidates, replace=False)
+    #     mask_position = np.array(mask_position)
+        
+    #     # set masked position with mask token id
+    #     mask_value_matrix = mask_position * self.mask_token_id # 마스킹할 위치에만 MASK ID를 넣어주는 벡터
+    #     inputs_mask = (mask_position == 0).astype(int)
+    #     batch_token_id_after_mlm = (batch_token_id * inputs_mask + mask_value_matrix).astype(int)
+        
+    #     # set masked position with its original token id
+    #     inputs_unmask = (mask_position == 1).astype(int)
+    #     mask_classification = (batch_token_id * inputs_unmask).astype(int)
+        
+    #     return batch_token_id_after_mlm, mask_position, mask_classification
+    
+    # 추가한 코드
+    def make_mask_language_model_data(self, batch_token_id):
+        batch_token_id = np.array(batch_token_id)
+        batch_size, seq_len = batch_token_id.shape
 
-    #         # 50%만 마스킹
-    #         num_to_mask = int(len(sampled_positions) * 0.5)
-    #         masked_positions = np.random.choice(sampled_positions, size=num_to_mask, replace=False)
+        mask_token_id = self.mask_token_id
+        pad_id = self.corpus.vocab2id['PAD']
+        sep_id = self.corpus.vocab2id['SEP']
 
-    #         # 마스크 적용
-    #         for pos in masked_positions:
-    #             batch_x[i, pos] = mask_token_id
-    #             mlm_mask[i, pos] = 1
-    #             mcc_mask[i, pos] = batch_token_id[i, pos]  # 정답 저장
+        batch_x = batch_token_id.copy()
+        mlm_mask = np.zeros_like(batch_token_id)
+        mcc_mask = np.zeros_like(batch_token_id)
 
-    #     return batch_x, mlm_mask, mcc_mask
+        for i in range(batch_size):
+            valid_positions = [
+                idx for idx in range(seq_len)
+                if batch_token_id[i, idx] != pad_id and batch_token_id[i, idx] != sep_id
+            ]
+
+            # 40% 샘플링
+            num_mask_candidates = int(len(valid_positions) * 0.4)
+            sampled_positions = np.random.choice(valid_positions, size=num_mask_candidates, replace=False)
+
+            # 50%만 마스킹
+            num_to_mask = int(len(sampled_positions) * 0.5)
+            masked_positions = np.random.choice(sampled_positions, size=num_to_mask, replace=False)
+
+            # 마스크 적용
+            for pos in masked_positions:
+                batch_x[i, pos] = mask_token_id
+                mlm_mask[i, pos] = 1
+                mcc_mask[i, pos] = batch_token_id[i, pos]  # 정답 저장
+
+        return batch_x, mlm_mask, mcc_mask
 
     def make_segment_inputs(self, batch_token_id):
         segment_inputs = []
