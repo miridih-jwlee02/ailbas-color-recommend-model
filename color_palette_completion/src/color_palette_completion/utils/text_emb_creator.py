@@ -44,7 +44,12 @@ def save_text_embedding_clip(text_inputs, data_path, text_object, dataType, max_
         idx = 0
         for t in text_input:
             if idx < max_text_seq_length:
-                text_tokens = clip.tokenize(t).cuda()
+                try:
+                    text_tokens = clip.tokenize(t).cuda()
+                except RuntimeError:
+                    print(f"Too long: {t[:50]}... → 잘라야 함")
+                    t = " ".join(t.split()[:20])  # 강제로 자름
+                    text_tokens = clip.tokenize(t).cuda()
                 with torch.no_grad():
                     text_features = model.encode_text(text_tokens).cuda().float()
                     text_features /= text_features.norm(dim=-1, keepdim=True)
